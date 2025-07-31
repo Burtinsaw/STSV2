@@ -5,7 +5,7 @@ import { lazy } from 'react';
 import Loadable from 'component/Loadable';
 import MinimalLayout from 'layout/MinimalLayout';
 
-// ✅ DOĞRU PATH'LER - '../views/Login/AuthLogin' yerine '../views/Login'
+
 const AuthLogin = Loadable(lazy(() => import('../views/Login')));
 const AuthRegister = Loadable(lazy(() => import('../views/Register')));
 const ForgotPassword = Loadable(lazy(() => import('../views/ForgotPassword')));

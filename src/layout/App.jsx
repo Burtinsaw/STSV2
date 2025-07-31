@@ -7,9 +7,11 @@ import CssBaseline from '@mui/material/CssBaseline';
 // third-party
 import { useSelector } from 'react-redux';
 
-// project import
-import theme from 'themes';
-import Routes from 'routes/index';
+// project import - YOLLAR DÜZELTİLDİ
+// App.jsx, layout klasöründe olduğu için bir üst klasöre (../) çıkıp
+// themes ve routes klasörlerine giriyoruz.
+import themes from '../themes';
+import Routes from '../routes';
 import NavigationScroll from './NavigationScroll';
 
 // ==============================|| APP ||============================== //
@@ -22,7 +24,7 @@ const App = () => {
       {
         <NavigationScroll>
           <StyledEngineProvider injectFirst>
-            <ThemeProvider theme={theme(customization)}>
+            <ThemeProvider theme={themes(customization)}>
               <CssBaseline />
               <Routes />
             </ThemeProvider>

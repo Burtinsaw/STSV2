@@ -2,19 +2,22 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 
-import 'assets/scss/style.scss';
+// project styles - YOL DÜZELTİLDİ
+// Vite'a bu dosyanın mevcut klasörün içindeki 'assets' klasöründe olduğunu söylüyoruz.
+import './assets/scss/style.scss';
 
+// redux
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
+// YOL DÜZELTİLDİ
+import reducer from './store/reducer'; 
 
-import App from 'layout/App';
-import reducer from 'store/reducer';
-import * as serviceWorker from 'serviceWorker';
-
-import { AuthProvider } from 'contexts/AuthContext';
+// project imports - YOLLAR DÜZELTİLDİ
+import App from './layout/App';
+import { AuthProvider } from './contexts/AuthContext';
+import * as serviceWorker from './serviceWorker';
 
 const store = configureStore({ reducer });
-
 const root = createRoot(document.getElementById('root'));
 
 root.render(
@@ -27,7 +30,4 @@ root.render(
   </Provider>
 );
 
-// If you want your app to work offline and load faster, you can change
-// unregister() to register() below. Note this comes with some pitfalls.
-// Learn more about service workers: https://bit.ly/CRA-PWA
 serviceWorker.unregister();

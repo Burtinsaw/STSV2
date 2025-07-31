@@ -1,4 +1,3 @@
-// src/views/Admin/UserManagement/index.jsx - DÜZELTILMIŞ VERSİYON
 import React, { useState, useEffect } from 'react';
 import {
   Box,
@@ -28,7 +27,9 @@ import {
   IconButton,
   Tooltip,
   Grid,
-  Divider
+  Divider,
+  Snackbar,
+  CircularProgress
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -36,489 +37,330 @@ import {
   Delete as DeleteIcon,
   VpnKey as VpnKeyIcon,
   Search as SearchIcon,
-  Refresh as RefreshIcon
+  Refresh as RefreshIcon,
+  Business as BusinessIcon
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { 
-  getUserList, 
-  createUser, 
-  deleteUser, 
-  resetUserPassword, 
-  updateUserStatus 
-} from '../../../services/api';
+
+// GERÇEK API FONKSİYONLARI
+// Bu import yolunun projenizdeki 'api.js' dosyasına doğru olduğundan emin olun.
+import * as api from 'services/api';
+
+// Yeni Departman ve Rol Listeleri
+const departments = ['Satınalma', 'Lojistik', 'Finans', 'Yönetici', 'IT', 'Operasyon'];
+const roles = [
+    { value: 'admin', label: 'Admin' },
+    { value: 'manager', label: 'Yönetici' },
+    { value: 'purchasing_manager', label: 'Satınalma Müdürü' },
+    { value: 'purchasing_staff', label: 'Satınalma' },
+    { value: 'logistics_manager', label: 'Lojistik Sorumlusu' },
+    { value: 'logistics_staff', label: 'Lojistik' },
+    { value: 'finance_manager', label: 'Finans Sorumlusu' },
+    { value: 'finance_staff', label: 'Finans' },
+    { value: 'operator', label: 'Operatör' },
+    { value: 'user', label: 'Standart Kullanıcı' }
+];
 
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
+  const [companies, setCompanies] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [openDialog, setOpenDialog] = useState(false);
-  const [alert, setAlert] = useState({ show: false, type: 'success', message: '' });
+  const [isEditing, setIsEditing] = useState(false);
+  const [snackbar, setSnackbar] = useState({ show: false, type: 'success', message: '' });
   
-  // Yeni kullanıcı formu
-  const [newUser, setNewUser] = useState({
+  const [userForm, setUserForm] = useState({
+    id: null,
     firstName: '',
     lastName: '',
     username: '',
     email: '',
     role: 'user',
-    department: ''
+    department: '',
+    companyId: '',
+    companyName: ''
   });
 
-  // Kullanıcı listesini yükle
-  const loadUsers = async () => {
+  const loadData = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      console.log('🔄 Kullanıcı listesi yükleniyor...');
-      
-      const response = await getUserList();
-      console.log('📋 API Response:', response);
-      
-      if (response && response.success && Array.isArray(response.data)) {
-        setUsers(response.data);
-        setFilteredUsers(response.data);
-        console.log('✅ Kullanıcı listesi yüklendi:', response.data.length, 'kullanıcı');
+      // API'den kullanıcıları çek
+      const userResponse = await api.getUserList();
+      if (userResponse.success && Array.isArray(userResponse.data)) {
+        setUsers(userResponse.data);
+        setFilteredUsers(userResponse.data);
       } else {
-        console.error('❌ Geçersiz API response:', response);
-        showAlert('error', 'Kullanıcı listesi formatı hatalı');
-        setUsers([]);
-        setFilteredUsers([]);
+        showSnackbar('error', 'Kullanıcı listesi alınamadı veya format hatalı.');
       }
+
+      // Firmaları localStorage'dan çek
+      const storedCompanies = JSON.parse(localStorage.getItem('companies') || '[]');
+      setCompanies(storedCompanies);
+
     } catch (error) {
-      console.error('Kullanıcı listesi hatası:', error);
-      showAlert('error', error.message || 'Kullanıcılar yüklenirken hata oluştu');
-      setUsers([]);
-      setFilteredUsers([]);
+      console.error('Veri yükleme hatası:', error);
+      showSnackbar('error', error.message || 'Veriler yüklenirken bir hata oluştu.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Arama filtresi
   useEffect(() => {
-    if (!Array.isArray(users)) {
-      setFilteredUsers([]);
-      return;
-    }
+    loadData();
+  }, []);
 
+  useEffect(() => {
     if (!searchTerm.trim()) {
       setFilteredUsers(users);
       return;
     }
-
-    const filtered = users.filter(user => {
-      if (!user) return false;
-      
-      const searchLower = searchTerm.toLowerCase();
-      
-      // Güvenli string kontrolü
-      const firstName = user.firstName ? user.firstName.toLowerCase() : '';
-      const lastName = user.lastName ? user.lastName.toLowerCase() : '';
-      const username = user.username ? user.username.toLowerCase() : '';
-      const email = user.email ? user.email.toLowerCase() : '';
-      const department = user.department ? user.department.toLowerCase() : '';
-      
-      return firstName.includes(searchLower) ||
-             lastName.includes(searchLower) ||
-             username.includes(searchLower) ||
-             email.includes(searchLower) ||
-             department.includes(searchLower);
-    });
-    
+    const searchLower = searchTerm.toLowerCase();
+    const filtered = users.filter(user => 
+        (user.firstName?.toLowerCase() || '').includes(searchLower) ||
+        (user.lastName?.toLowerCase() || '').includes(searchLower) ||
+        (user.username?.toLowerCase() || '').includes(searchLower) ||
+        (user.email?.toLowerCase() || '').includes(searchLower) ||
+        (user.department?.toLowerCase() || '').includes(searchLower)
+    );
     setFilteredUsers(filtered);
   }, [users, searchTerm]);
 
-  // Component mount
-  useEffect(() => {
-    loadUsers();
-  }, []);
-
-  // Alert göster
-  const showAlert = (type, message) => {
-    setAlert({ show: true, type, message });
-    setTimeout(() => {
-      setAlert({ show: false, type: 'success', message: '' });
-    }, 5000);
+  const showSnackbar = (type, message) => {
+    setSnackbar({ show: true, type, message });
   };
 
-  // Kullanıcı şifresini sıfırla
-  const handleResetPassword = async (userId, userEmail) => {
+  const handleOpenDialog = (user = null) => {
+    if (user) {
+        setIsEditing(true);
+        setUserForm(user);
+    } else {
+        setIsEditing(false);
+        setUserForm({ id: null, firstName: '', lastName: '', username: '', email: '', role: 'user', department: '', companyId: '' });
+    }
+    setOpenDialog(true);
+  };
+
+  const handleCloseDialog = () => setOpenDialog(false);
+
+  const handleSaveUser = async () => {
+    if (!userForm.firstName || !userForm.lastName || !userForm.username || !userForm.email) {
+        showSnackbar('error', 'Ad, Soyad, Kullanıcı Adı ve E-posta alanları zorunludur.');
+        return;
+    }
+
     try {
-      console.log(`🔑 Şifre sıfırlama: ${userId}`);
-      
-      const response = await resetUserPassword(userId);
-      
-      if (response && response.success) {
-        showAlert('success', `${userEmail} kullanıcısının şifresi sıfırlandı. Geçici şifre: ${response.data.tempPassword}`);
-        console.log('✅ Şifre sıfırlandı:', response.data.tempPassword);
-      } else {
-        showAlert('error', 'Şifre sıfırlanırken hata oluştu');
-      }
+        let response;
+        if (isEditing) {
+            response = await api.updateUser(userForm.id, userForm);
+            showSnackbar('success', 'Kullanıcı başarıyla güncellendi.');
+        } else {
+            response = await api.createUser(userForm);
+            showSnackbar('success', `Kullanıcı oluşturuldu. Geçici şifre: ${response.data.tempPassword}`);
+        }
+        
+        if (response.success) {
+            loadData(); // Listeyi yenile
+            handleCloseDialog();
+        } else {
+            showSnackbar('error', response.message || 'İşlem sırasında bir hata oluştu.');
+        }
     } catch (error) {
-      console.error('Şifre sıfırlama hatası:', error);
-      showAlert('error', error.message || 'Şifre sıfırlanırken hata oluştu');
+        showSnackbar('error', error.message || 'İşlem sırasında bir hata oluştu.');
+    }
+  };
+  
+  const handleDeleteUser = async (userId) => {
+    if (window.confirm('Bu kullanıcıyı silmek istediğinizden emin misiniz?')) {
+        try {
+            const response = await api.deleteUser(userId);
+            if (response.success) {
+                showSnackbar('warning', 'Kullanıcı silindi.');
+                loadData();
+            } else {
+                showSnackbar('error', response.message || 'Kullanıcı silinirken bir hata oluştu.');
+            }
+        } catch (error) {
+            showSnackbar('error', error.message || 'Kullanıcı silinirken bir hata oluştu.');
+        }
     }
   };
 
-  // Kullanıcı durumunu değiştir
   const handleStatusChange = async (userId, newStatus) => {
     try {
-      console.log(`🔄 Durum değiştirme: ${userId} -> ${newStatus}`);
-      
-      const response = await updateUserStatus(userId, newStatus);
-      
-      if (response && response.success) {
-        // Kullanıcı listesini güncelle
-        setUsers(prevUsers => 
-          prevUsers.map(user => 
-            user.id === userId ? { ...user, status: newStatus } : user
-          )
-        );
-        showAlert('success', `Kullanıcı durumu ${newStatus === 'active' ? 'aktif' : 'pasif'} olarak güncellendi`);
-      } else {
-        showAlert('error', 'Kullanıcı durumu güncellenirken hata oluştu');
-      }
+        const response = await api.updateUserStatus(userId, newStatus ? 'active' : 'inactive');
+        if (response.success) {
+            showSnackbar('info', `Kullanıcı durumu güncellendi.`);
+            setUsers(users.map(u => u.id === userId ? {...u, status: newStatus ? 'active' : 'inactive'} : u));
+        } else {
+            showSnackbar('error', response.message || 'Durum güncellenirken bir hata oluştu.');
+        }
     } catch (error) {
-      console.error('Durum güncelleme hatası:', error);
-      showAlert('error', error.message || 'Kullanıcı durumu güncellenirken hata oluştu');
+        showSnackbar('error', error.message || 'Durum güncellenirken bir hata oluştu.');
     }
   };
 
-  // Yeni kullanıcı oluştur
-  const handleCreateUser = async () => {
-    try {
-      console.log('➕ Yeni kullanıcı oluşturuluyor:', newUser);
-      
-      // Validasyon
-      if (!newUser.firstName || !newUser.lastName || !newUser.username || !newUser.email) {
-        showAlert('error', 'Tüm zorunlu alanları doldurunuz');
-        return;
+  const handleResetPassword = async (userId) => {
+      try {
+          const response = await api.resetUserPassword(userId);
+          if(response.success) {
+              showSnackbar('success', `Şifre sıfırlandı. Yeni şifre: ${response.data.tempPassword}`);
+          } else {
+              showSnackbar('error', response.message || 'Şifre sıfırlanamadı.');
+          }
+      } catch (error) {
+          showSnackbar('error', error.message || 'Şifre sıfırlanırken bir hata oluştu.');
       }
-
-      const response = await createUser(newUser);
-      
-      if (response && response.success) {
-        showAlert('success', `Kullanıcı oluşturuldu. Geçici şifre: ${response.data.tempPassword}`);
-        setOpenDialog(false);
-        setNewUser({
-          firstName: '',
-          lastName: '',
-          username: '',
-          email: '',
-          role: 'user',
-          department: ''
-        });
-        loadUsers(); // Listeyi yenile
-      } else {
-        showAlert('error', 'Kullanıcı oluşturulurken hata oluştu');
-      }
-    } catch (error) {
-      console.error('Kullanıcı oluşturma hatası:', error);
-      showAlert('error', error.message || 'Kullanıcı oluşturulurken hata oluştu');
-    }
   };
 
-  // Kullanıcı sil
-  const handleDeleteUser = async (userId, username) => {
-    if (!window.confirm(`${username} kullanıcısını silmek istediğinizden emin misiniz?`)) {
-      return;
-    }
-
-    try {
-      console.log(`🗑️ Kullanıcı siliniyor: ${userId}`);
-      
-      const response = await deleteUser(userId);
-      
-      if (response && response.success) {
-        showAlert('success', `${username} kullanıcısı silindi`);
-        loadUsers(); // Listeyi yenile
-      } else {
-        showAlert('error', 'Kullanıcı silinirken hata oluştu');
-      }
-    } catch (error) {
-      console.error('Kullanıcı silme hatası:', error);
-      showAlert('error', error.message || 'Kullanıcı silinirken hata oluştu');
-    }
+  const getRoleLabel = (roleValue) => {
+    const role = roles.find(r => r.value === roleValue);
+    return role ? role.label : roleValue;
+  };
+  
+  const getRoleColor = (roleValue) => {
+    const roleColors = {
+        admin: 'error',
+        manager: 'warning',
+        purchasing_manager: 'secondary',
+        logistics_manager: 'secondary',
+        finance_manager: 'secondary',
+        user: 'primary',
+    };
+    return roleColors[roleValue] || 'default';
   };
 
-  // Rol rengi
-  const getRoleColor = (role) => {
-    switch (role) {
-      case 'admin': return 'error';
-      case 'manager': return 'warning';
-      case 'user': return 'primary';
-      default: return 'default';
-    }
-  };
-
-  // Rol etiketi
-  const getRoleLabel = (role) => {
-    switch (role) {
-      case 'admin': return 'Admin';
-      case 'manager': return 'Müdür';
-      case 'user': return 'Kullanıcı';
-      default: return role;
-    }
-  };
-
-  // Tarih formatla
-  const formatDate = (date) => {
-    if (!date) return 'Hiç giriş yapmamış';
-    try {
-      return format(new Date(date), 'dd.MM.yyyy HH:mm', { locale: tr });
-    } catch (error) {
-      return 'Geçersiz tarih';
-    }
-  };
+  const formatDate = (date) => date ? format(new Date(date), 'dd.MM.yyyy HH:mm', { locale: tr }) : 'Hiç giriş yapmadı';
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Alert */}
-      {alert.show && (
-        <Alert 
-          severity={alert.type} 
-          sx={{ mb: 2 }}
-          onClose={() => setAlert({ show: false, type: 'success', message: '' })}
-        >
-          {alert.message}
-        </Alert>
-      )}
+      <Snackbar open={snackbar.show} autoHideDuration={6000} onClose={() => setSnackbar({ ...snackbar, show: false })} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
+            <Alert onClose={() => setSnackbar({ ...snackbar, show: false })} severity={snackbar.type} sx={{ width: '100%' }}>
+                {snackbar.message}
+            </Alert>
+      </Snackbar>
 
-      {/* Başlık ve Kontroller */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} md={6}>
-              <Typography variant="h4" component="h1" gutterBottom>
-                👥 Kullanıcı Yönetimi
-              </Typography>
-              <Typography variant="body2" color="textSecondary">
-                Sistem kullanıcılarını yönetin, şifrelerini sıfırlayın ve yeni kullanıcılar ekleyin.
-              </Typography>
+              <Typography variant="h4" component="h1">Kullanıcı Yönetimi</Typography>
+              <Typography variant="body2" color="textSecondary">Sistem kullanıcılarını ve rollerini yönetin.</Typography>
             </Grid>
             <Grid item xs={12} md={6}>
-              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                <Button
-                  variant="outlined"
-                  startIcon={<RefreshIcon />}
-                  onClick={loadUsers}
-                  disabled={loading}
-                >
-                  Yenile
-                </Button>
-                <Button
-                  variant="contained"
-                  startIcon={<AddIcon />}
-                  onClick={() => setOpenDialog(true)}
-                >
-                  Yeni Kullanıcı
-                </Button>
+              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                <Button variant="outlined" startIcon={<RefreshIcon />} onClick={loadData} disabled={loading}>Yenile</Button>
+                <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenDialog()}>Yeni Kullanıcı</Button>
               </Box>
             </Grid>
           </Grid>
-
           <Divider sx={{ my: 2 }} />
-
-          {/* Arama */}
           <TextField
             fullWidth
             variant="outlined"
-            placeholder="Kullanıcı ara (ad, soyad, kullanıcı adı, e-posta, departman)"
+            placeholder="Kullanıcı ara..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            InputProps={{
-              startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />
-            }}
+            InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} /> }}
             sx={{ maxWidth: 500 }}
           />
         </CardContent>
       </Card>
 
-      {/* Kullanıcı Tablosu */}
       <Card>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Kullanıcı Listesi ({filteredUsers.length} kullanıcı)
-          </Typography>
-
-          {loading ? (
-            <Box sx={{ textAlign: 'center', py: 4 }}>
-              <Typography>Kullanıcılar yükleniyor...</Typography>
-            </Box>
-          ) : filteredUsers.length === 0 ? (
-            <Box sx={{ textAlign: 'center', py: 4 }}>
-              <Typography color="textSecondary">
-                {searchTerm ? 'Arama kriterine uygun kullanıcı bulunamadı' : 'Henüz kullanıcı bulunmuyor'}
-              </Typography>
-            </Box>
-          ) : (
-            <TableContainer component={Paper} variant="outlined">
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell><strong>Kullanıcı</strong></TableCell>
-                    <TableCell><strong>E-posta</strong></TableCell>
-                    <TableCell><strong>Rol</strong></TableCell>
-                    <TableCell><strong>Departman</strong></TableCell>
-                    <TableCell><strong>Durum</strong></TableCell>
-                    <TableCell><strong>Son Giriş</strong></TableCell>
-                    <TableCell align="center"><strong>İşlemler</strong></TableCell>
+          <TableContainer component={Paper} variant="outlined">
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Kullanıcı</TableCell>
+                  <TableCell>Rol</TableCell>
+                  <TableCell>Departman</TableCell>
+                  <TableCell>Şirket</TableCell>
+                  <TableCell>Durum</TableCell>
+                  <TableCell>Son Giriş</TableCell>
+                  <TableCell align="center">İşlemler</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {loading ? (
+                    <TableRow><TableCell colSpan={7} align="center"><CircularProgress /></TableCell></TableRow>
+                ) : filteredUsers.map((user) => (
+                  <TableRow key={user.id} hover>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight="bold">{user.firstName} {user.lastName}</Typography>
+                      <Typography variant="caption" color="textSecondary">@{user.username}</Typography>
+                    </TableCell>
+                    <TableCell><Chip label={getRoleLabel(user.role)} color={getRoleColor(user.role)} size="small" /></TableCell>
+                    <TableCell>{user.department || 'N/A'}</TableCell>
+                    <TableCell>
+                        <Tooltip title={user.companyName || 'Atanmamış'}>
+                            <Chip icon={<BusinessIcon />} label={user.companyName ? (user.companyName.length > 20 ? user.companyName.substring(0, 20) + '...' : user.companyName) : 'Atanmamış'} size="small" variant="outlined" />
+                        </Tooltip>
+                    </TableCell>
+                    <TableCell>
+                      <Switch checked={user.status === 'active'} onChange={(e) => handleStatusChange(user.id, e.target.checked)} />
+                    </TableCell>
+                    <TableCell>{formatDate(user.lastLogin)}</TableCell>
+                    <TableCell align="center">
+                      <Tooltip title="Düzenle"><IconButton size="small" onClick={() => handleOpenDialog(user)}><EditIcon /></IconButton></Tooltip>
+                      <Tooltip title="Şifre Sıfırla"><IconButton size="small" color="primary" onClick={() => handleResetPassword(user.id)}><VpnKeyIcon /></IconButton></Tooltip>
+                      <Tooltip title="Sil"><IconButton size="small" color="error" onClick={() => handleDeleteUser(user.id)}><DeleteIcon /></IconButton></Tooltip>
+                    </TableCell>
                   </TableRow>
-                </TableHead>
-                <TableBody>
-                  {filteredUsers.map((user) => (
-                    <TableRow key={user.id} hover>
-                      <TableCell>
-                        <Box>
-                          <Typography variant="body2" fontWeight="bold">
-                            {user.firstName} {user.lastName}
-                          </Typography>
-                          <Typography variant="caption" color="textSecondary">
-                            @{user.username}
-                          </Typography>
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2">
-                          {user.email}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={getRoleLabel(user.role)}
-                          color={getRoleColor(user.role)}
-                          size="small"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2">
-                          {user.department || 'Belirtilmemiş'}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Switch
-                          checked={user.status === 'active'}
-                          onChange={(e) => handleStatusChange(user.id, e.target.checked ? 'active' : 'inactive')}
-                          color="primary"
-                          size="small"
-                        />
-                        <Typography variant="caption" display="block">
-                          {user.status === 'active' ? 'Aktif' : 'Pasif'}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2">
-                          {formatDate(user.lastLogin)}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
-                          <Tooltip title="Şifre Sıfırla">
-                            <IconButton
-                              size="small"
-                              color="primary"
-                              onClick={() => handleResetPassword(user.id, user.email)}
-                            >
-                              <VpnKeyIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          
-                          {user.role !== 'admin' && (
-                            <Tooltip title="Kullanıcı Sil">
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() => handleDeleteUser(user.id, user.username)}
-                              >
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          )}
-                        </Box>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
         </CardContent>
       </Card>
 
-      {/* Yeni Kullanıcı Dialog */}
-      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          ➕ Yeni Kullanıcı Ekle
-        </DialogTitle>
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>{isEditing ? 'Kullanıcıyı Düzenle' : 'Yeni Kullanıcı Ekle'}</DialogTitle>
         <DialogContent>
-          <Box sx={{ pt: 1 }}>
-            <Grid container spacing={2}>
-              <Grid item xs={6}>
-                <TextField
-                  fullWidth
-                  label="Ad *"
-                  value={newUser.firstName}
-                  onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
-                />
-              </Grid>
-              <Grid item xs={6}>
-                <TextField
-                  fullWidth
-                  label="Soyad *"
-                  value={newUser.lastName}
-                  onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
-                />
-              </Grid>
-              <Grid item xs={6}>
-                <TextField
-                  fullWidth
-                  label="Kullanıcı Adı *"
-                  value={newUser.username}
-                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                />
-              </Grid>
-              <Grid item xs={6}>
-                <TextField
-                  fullWidth
-                  label="E-posta *"
-                  type="email"
-                  value={newUser.email}
-                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                />
-              </Grid>
-              <Grid item xs={6}>
+          <Grid container spacing={2} sx={{ pt: 1 }}>
+            <Grid item xs={6}><TextField fullWidth label="Ad *" value={userForm.firstName} onChange={(e) => setUserForm({ ...userForm, firstName: e.target.value })} /></Grid>
+            <Grid item xs={6}><TextField fullWidth label="Soyad *" value={userForm.lastName} onChange={(e) => setUserForm({ ...userForm, lastName: e.target.value })} /></Grid>
+            <Grid item xs={6}><TextField fullWidth label="Kullanıcı Adı *" value={userForm.username} onChange={(e) => setUserForm({ ...userForm, username: e.target.value })} /></Grid>
+            <Grid item xs={6}><TextField fullWidth label="E-posta *" type="email" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} /></Grid>
+            <Grid item xs={12}>
                 <FormControl fullWidth>
-                  <InputLabel>Rol</InputLabel>
-                  <Select
-                    value={newUser.role}
-                    label="Rol"
-                    onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                  >
-                    <MenuItem value="user">Kullanıcı</MenuItem>
-                    <MenuItem value="manager">Müdür</MenuItem>
-                    <MenuItem value="admin">Admin</MenuItem>
-                  </Select>
+                    <InputLabel>Atanacak Şirket</InputLabel>
+                    <Select value={userForm.companyId || ''} label="Atanacak Şirket" onChange={(e) => setUserForm({ ...userForm, companyId: e.target.value, companyName: companies.find(c=>c.id === e.target.value)?.name })}>
+                        <MenuItem value=""><em>Hiçbiri</em></MenuItem>
+                        {companies.map(company => (
+                            <MenuItem key={company.id} value={company.id}>{company.name}</MenuItem>
+                        ))}
+                    </Select>
                 </FormControl>
-              </Grid>
-              <Grid item xs={6}>
-                <TextField
-                  fullWidth
-                  label="Departman"
-                  value={newUser.department}
-                  onChange={(e) => setNewUser({ ...newUser, department: e.target.value })}
-                />
-              </Grid>
             </Grid>
-          </Box>
+            <Grid item xs={6}>
+              <FormControl fullWidth>
+                <InputLabel>Rol</InputLabel>
+                <Select value={userForm.role} label="Rol" onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}>
+                  {roles.map(role => (
+                      <MenuItem key={role.value} value={role.value}>{role.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={6}>
+              <FormControl fullWidth>
+                <InputLabel>Departman</InputLabel>
+                <Select value={userForm.department} label="Departman" onChange={(e) => setUserForm({ ...userForm, department: e.target.value })}>
+                  {departments.map(dep => (
+                      <MenuItem key={dep} value={dep}>{dep}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+          </Grid>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpenDialog(false)}>
-            İptal
-          </Button>
-          <Button variant="contained" onClick={handleCreateUser}>
-            Kullanıcı Oluştur
-          </Button>
+          <Button onClick={handleCloseDialog}>İptal</Button>
+          <Button variant="contained" onClick={handleSaveUser}>{isEditing ? 'Güncelle' : 'Oluştur'}</Button>
         </DialogActions>
       </Dialog>
     </Box>
@@ -526,4 +368,3 @@ const UserManagement = () => {
 };
 
 export default UserManagement;
-

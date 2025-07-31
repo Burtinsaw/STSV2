@@ -1,13 +1,16 @@
-// third party
+// src/store/reducer.js
+
 import { combineReducers } from 'redux';
 
-// project import
+// reducer import
 import customizationReducer from './customizationReducer';
+import requestReducer from './requestSlice'; 
 
-// ==============================|| REDUCER ||============================== //
+// ==============================|| COMBINE REDUCER ||============================== //
 
 const reducer = combineReducers({
-  customization: customizationReducer
+  customization: customizationReducer,
+  request: requestReducer 
 });
 
 export default reducer;

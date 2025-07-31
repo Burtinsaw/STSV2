@@ -1,34 +1,70 @@
-import { lazy } from 'react';
-import Loadable from '../component/Loadable';
-import MainLayout from '../layout/MainLayout';
+import React, { lazy } from 'react';
+import { Navigate } from 'react-router-dom';
 
-// -- DİKKAT: Senin dosya yapına birebir uygun importlar --
-const Dashboard = Loadable(lazy(() => import('views/Dashboard/default')));
-const Requests = Loadable(lazy(() => import('views/Requests/UnifiedRequestSystem')));
-const Procurement = Loadable(lazy(() => import('views/Procurement/index')));
-const Admin = Loadable(lazy(() => import('views/Admin/index')));
-const Profile = Loadable(lazy(() => import('views/Profile/index')));
-const Settings = Loadable(lazy(() => import('views/Settings/index')));
-const Messages = Loadable(lazy(() => import('views/Messages/index')));
-const Calendar = Loadable(lazy(() => import('views/Utils/Calendar/index')));
-const NotFound = Loadable(lazy(() => import('views/Utils/NotFound/index')));
-const UnderConstruction = Loadable(lazy(() => import('views/Utils/UnderConstruction/index')));
+// project import
+import MainLayout from 'layout/MainLayout';
+import Loadable from 'component/Loadable';
+
+// AUTH CONTEXT
+import UserManagement from 'views/admin/UserManagement';
+import { useAuth } from 'contexts/AuthContext';
+
+// --- View importları ---
+
+// Dashboard
+const DashboardDefault = Loadable(lazy(() => import('views/dashboard/Default')));
+
+// Auth Pages
+const ChangePassword = Loadable(lazy(() => import('views/ChangePassword')));
+
+// Request Pages
+const UnifiedRequestSystem = Loadable(lazy(() => import('views/requests/UnifiedRequestSystem')));
+const RequestList = Loadable(lazy(() => import('views/requests/RequestList')));
+const PendingRequests = Loadable(lazy(() => import('views/requests/PendingRequests')));
+const ApprovedRequests = Loadable(lazy(() => import('views/requests/ApprovedRequests')));
+const RequestDetail = Loadable(lazy(() => import('@/views/Requests/RequestDetail')));
+
+// Procurement Pages - YENİ YAPI
+const QuotationComparison = Loadable(lazy(() => import('views/procurement/QuotationComparison')));
+const OfferManagement = Loadable(lazy(() => import('views/procurement/OfferManagement'))); // Yeni teklif yönetim sayfası
+
+// Company Management
+const CompanyManagement = Loadable(lazy(() => import('views/admin/CompanyManagement')));
+
+// PROTECTED LAYOUT
+const ProtectedLayout = () => {
+  const { isAuthenticated, isLoading } = useAuth();
+  if (isLoading) { return <div>Yükleniyor...</div>; }
+  if (!isAuthenticated) { return <Navigate to="/login" replace />; }
+  return <MainLayout />;
+};
+
+// ==============================|| MAIN ROUTES ||============================== //
 
 const MainRoutes = {
   path: '/',
-  element: <MainLayout />,
+  element: <ProtectedLayout />,
   children: [
-    { path: '', element: <Dashboard /> },
-    { path: 'dashboard', element: <Dashboard /> },
-    { path: 'requests/*', element: <Requests /> },
-    { path: 'procurement/*', element: <Procurement /> },
-    { path: 'admin/*', element: <Admin /> },
-    { path: 'profile', element: <Profile /> },
-    { path: 'settings', element: <Settings /> },
-    { path: 'messages', element: <Messages /> },
-    { path: 'calendar', element: <Calendar /> },
-    { path: 'under-construction', element: <UnderConstruction /> },
-    { path: '*', element: <NotFound /> }
+    { path: '/', element: <DashboardDefault /> },
+    { path: 'dashboard/default', element: <DashboardDefault /> },
+    
+    // Auth Routes
+    { path: 'first-login', element: <ChangePassword isFirstLogin={true} /> },
+    
+    // Request Routes
+    { path: 'requests/unified', element: <UnifiedRequestSystem /> },
+    { path: 'requests/list', element: <RequestList /> },
+    { path: 'requests/pending', element: <PendingRequests /> },
+    { path: 'requests/approved', element: <ApprovedRequests /> },
+    { path: 'requests/detail/:id', element: <RequestDetail /> },
+    
+    // Procurement Routes - GÜNCELLENMİŞ YAPI
+    { path: 'procurement/quotations', element: <QuotationComparison /> },
+    { path: 'procurement/manage/:id', element: <OfferManagement /> }, // Yeni route
+    
+    // Admin Routes
+    { path: 'admin/user-management', element: <UserManagement /> },
+    { path: 'admin/company-management', element: <CompanyManagement /> },
   ]
 };
 
