@@ -5,6 +5,7 @@ import {
   Divider, IconButton, Autocomplete, Dialog, DialogTitle, DialogContent, DialogActions,
   Table, TableContainer, TableHead, TableRow, TableCell, TableBody, Checkbox
 } from '@mui/material';
+import ManualProductForm from './ManualProductForm';
 import {
   CloudUpload as UploadIcon, Send as SendIcon, Add as AddIcon, DeleteOutline as DeleteIcon,
   ShoppingCartOutlined as ShoppingCartIcon, DescriptionOutlined as FileIcon, PersonOutlined as UserIcon,
@@ -25,9 +26,10 @@ import * as pdfjsLib from 'pdfjs-dist';
 import * as XLSX from 'xlsx';
 import Tesseract from 'tesseract.js';
 
-// Simülasyonlar
-const useAuth = () => ({ user: { id: 1, name: 'Hüseyin Uzun', department: 'IT Departmanı' } });
-const mockCompanies = [{ name: 'Amazon DE' }, { name: 'Alibaba' }, { name: 'Mouser Electronics' }];
+// Gerçek AuthContext kullanılmalı, mock kaldırıldı
+import { useAuth } from '../../contexts/AuthContext';
+import { useDispatch } from 'react-redux';
+import { fetchRequests } from '../../store/requestSlice';
 
 // =================================================================
 // GERÇEK DOKÜMAN İŞLEME SERVİSİ (Değişiklik yok)
@@ -66,7 +68,7 @@ const UnifiedRequestSystem = () => {
         externalRequesterName: '', 
     });
     const [selectedProducts, setSelectedProducts] = useState([]);
-    const [companies, setCompanies] = useState(mockCompanies);
+    const [companies, setCompanies] = useState([]);
     const [extractedProducts, setExtractedProducts] = useState([]);
     const [activeTab, setActiveTab] = useState('ai-upload');
     const [manualProduct, setManualProduct] = useState({ name: '', quantity: 1, unit: 'adet', brand: '', articleNumber: '' });
@@ -80,24 +82,76 @@ const UnifiedRequestSystem = () => {
     const stepSubtitles = { 0: 'AI ile ürün çıkarın veya manuel ekleyin', 1: 'Talep için başlık ve açıklama girin', 2: 'Yurtdışı firma bilgilerini belirtin', 3: 'Tüm bilgileri kontrol edip onaya gönderin' };
 
     useEffect(() => {
-    //   requestService.getCompanies()
-    //     .then(response => setCompanies(response.data))
-    //     .catch(error => {
-    //         console.error("Firmalar çekilemedi:", error);
-    //         toast.error("Müşteri listesi yüklenemedi.");
-    //     });
+        let isMounted = true;
+        // Sadece müşteri olan firmaları çek
+        fetch('/api/companies?type=customer')
+            .then(res => res.json())
+            .then(data => { if (isMounted) setCompanies(data); })
+            .catch(error => {
+                if (isMounted) {
+                    console.error("Firmalar çekilemedi:", error);
+                    toast.error("Müşteri listesi yüklenemedi.");
+                }
+            });
+        return () => { isMounted = false; };
     }, []);
 
     const handleDataChange = (field, value) => setRequestData(prev => ({ ...prev, [field]: value }));
 
     const processTextWithAI = async (text) => {
-        setIsProcessing(true); setExtractedProducts([]);
+        let isMounted = true;
+        setIsProcessing(true);
+        setExtractedProducts([]);
         try {
             const products = await documentService.extractProductsWithAI(text);
-            setExtractedProducts(products.map(p => ({...p, id: `${Date.now()}-${Math.random()}`, selected: true })));
-            toast.success(`${products.length} ürün başarıyla bulundu!`);
-        } catch (error) { console.error(error); toast.error("İşlem sırasında bir hata oluştu."); } 
-        finally { setIsProcessing(false); }
+            if (products.length === 0) {
+                if (isMounted) {
+                    toast.info("AI hiçbir ürün bulamadı.");
+                    setIsProcessing(false);
+                }
+                return;
+            }
+            // Ürün isimlerini topla
+            const productNames = products.map(p => p.name).join(' || ');
+            // Otomatik dil algıla
+            const detectedLang = await documentService.detectLanguage(productNames);
+            // Eğer zaten Türkçe ise, çevirme
+            let translatedNames = productNames;
+            if (detectedLang !== 'tr') {
+                try {
+                    toast.loading("Ürün isimleri Türkçe'ye çevriliyor...", { id: 'translate' });
+                    translatedNames = await documentService.translateText(productNames, 'tr', detectedLang);
+                    toast.dismiss('translate');
+                    toast.success("Ürün isimleri başarıyla Türkçe'ye çevrildi.");
+                } catch (translateError) {
+                    console.warn("Çeviri hatası, orijinal isimler kullanılıyor:", translateError);
+                    toast.warning("Ürün isimleri çevrilemedi, orijinal halleriyle gösteriliyor.");
+                }
+            } else {
+                toast.info("Ürün isimleri zaten Türkçe.");
+            }
+            // Çevrilen isimleri || ile ayır ve eşleştir
+            const translatedNameList = translatedNames.split('||').map(name => name.trim());
+            // AI'dan gelen ürünleri, çevirilmiş isimlerle güncelle
+            const finalProducts = products.map((p, index) => ({
+                ...p,
+                name: translatedNameList[index] || p.name, // eşleşme yoksa orijinali koru
+                id: `${Date.now()}-${Math.random()}`,
+                selected: true
+            }));
+            if (isMounted) {
+                setExtractedProducts(finalProducts);
+            }
+        } catch (error) {
+            console.error('❌ AI ile ürün çıkarımı hatası:', error);
+            if (isMounted) {
+                toast.error("Ürünler işlenirken bir hata oluştu.");
+            }
+        } finally {
+            if (isMounted) {
+                setIsProcessing(false);
+            }
+        }
     };
 
     const handleFileProcessing = async (file) => {
@@ -136,37 +190,50 @@ const UnifiedRequestSystem = () => {
     const addManualListToCart = () => {
         setSelectedProducts(prev => [...prev, ...manualProductList]);
         setManualProductList([]);
-        toast.success(`${manualProductList.length} ürün sepete eklendi.`);
+        toast.success(`${manualProductList.length} ürün talebe eklendi.`);
     };
 
     const addExtractedToCart = () => {
         const selected = extractedProducts.filter(p => p.selected);
         if (selected.length === 0) {
-            toast.warning("Lütfen sepete eklemek için en az bir ürün seçin.");
+            toast.warning("Lütfen talebe eklemek için en az bir ürün seçin.");
             return;
         }
         setSelectedProducts(prev => [...prev, ...selected]);
         setExtractedProducts([]);
-        toast.success(`${selected.length} ürün sepete eklendi.`);
+        toast.success(`${selected.length} ürün talebe eklendi.`);
     };
 
+    const dispatch = useDispatch();
+
     const handleSubmitRequest = async () => {
+        if (!user || !user.id) {
+            toast.error('Kullanıcı oturumu bulunamadı veya userId eksik. Lütfen tekrar giriş yapın.');
+            return;
+        }
         setIsProcessing(true);
         const finalPayload = { 
             ...requestData, 
-            internalRequester: user, 
+            internalRequester: { ...user, id: user.id }, 
             products: selectedProducts,
         };
-
         try {
-            const response = await requestService.createRequest(finalPayload);
-            toast.success(`Talep başarıyla oluşturuldu! Veritabanı ID: ${response.data.id}`);
+            // Gerçek API'ye gönder
+            const response = await fetch('/api/talepler', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(finalPayload)
+            });
+            if (!response.ok) throw new Error('Talep oluşturulamadı');
+            toast.success('Talep başarıyla oluşturuldu!');
             setActiveStep(0);
             setSelectedProducts([]);
             setRequestData({ customTalepId: '', title: '', description: '', externalCompanyName: '', externalRequesterName: '' });
+            // Listeyi güncelle
+            dispatch(fetchRequests());
         } catch (error) {
             console.error("Talep gönderme hatası:", error);
-            toast.error(error.response?.data?.message || "Talep oluşturulurken bir hata oluştu.");
+            toast.error(error.message || "Talep oluşturulurken bir hata oluştu.");
         } finally {
             setIsProcessing(false);
         }
@@ -198,8 +265,8 @@ const UnifiedRequestSystem = () => {
     const isStepValid = (step) => {
         switch (step) {
             case 0: return selectedProducts.length > 0;
-            case 1: return requestData.title.trim() !== '' && requestData.customTalepId.trim() !== '';
-            case 2: return requestData.externalCompanyName.trim() !== '';
+            case 1: return (requestData.title || '').trim() !== '' && (requestData.customTalepId || '').trim() !== '';
+            case 2: return (requestData.externalCompanyName || '').trim() !== '';
             default: return true;
         }
     };
@@ -217,11 +284,80 @@ const UnifiedRequestSystem = () => {
                         </Grid>
                         <Box mt={3}>
                             {activeTab === 'ai-upload' && <Dropzone onClick={() => fileInputRef.current.click()}><input ref={fileInputRef} type="file" hidden onChange={(e) => handleFileProcessing(e.target.files[0])} /><UploadIcon sx={{ fontSize: 48, color: 'grey.500' }} /><Typography variant="h6">Dosyanızı Sürükleyin veya Seçin</Typography><Typography variant="body2" color="text.secondary">PDF, Word, Excel veya Resim</Typography></Dropzone>}
-                            {activeTab === 'manual' && <Paper variant="outlined" sx={{ p: 2 }}><Grid container spacing={2} alignItems="center"><Grid item xs={12} sm={4}><TextField fullWidth size="small" label="Ürün Adı" value={manualProduct.name} onChange={e => setManualProduct({...manualProduct, name: e.target.value})} /></Grid><Grid item xs={12} sm={4}><TextField fullWidth size="small" label="Marka" value={manualProduct.brand} onChange={e => setManualProduct({...manualProduct, brand: e.target.value})} /></Grid><Grid item xs={12} sm={4}><TextField fullWidth size="small" label="Artikel No" value={manualProduct.articleNumber} onChange={e => setManualProduct({...manualProduct, articleNumber: e.target.value})} /></Grid><Grid item xs={6} sm={3}><TextField fullWidth size="small" label="Miktar" type="number" value={manualProduct.quantity} onChange={e => setManualProduct({...manualProduct, quantity: e.target.value})} /></Grid><Grid item xs={6} sm={3}><TextField fullWidth size="small" label="Birim" value={manualProduct.unit} onChange={e => setManualProduct({...manualProduct, unit: e.target.value})} /></Grid><Grid item xs={12} sm={6}><Button fullWidth variant="contained" onClick={handleAddManualProductToList} sx={{height: '100%'}}><AddIcon /> Listeye Ekle</Button></Grid></Grid>{manualProductList.length > 0 && <Box mt={2}><List dense>{manualProductList.map(p => <ListItem key={p.id}><ListItemText primary={p.name} secondary={`Marka: ${p.brand || '-'}, Artikel: ${p.articleNumber || '-'}, Miktar: ${p.quantity} ${p.unit}`} /></ListItem>)}</List><Button fullWidth variant="outlined" onClick={addManualListToCart}>Listeyi Sepete Ekle</Button></Box>}</Paper>}
+                            {activeTab === 'manual' && (
+                              <ManualProductForm
+                                manualProduct={manualProduct}
+                                setManualProduct={setManualProduct}
+                                manualProductList={manualProductList}
+                                handleAddManualProductToList={handleAddManualProductToList}
+                                addManualListToCart={addManualListToCart}
+                              />
+                            )}
                             {activeTab === 'translate' && <Paper variant="outlined" sx={{ p: 2 }}><Grid container spacing={2}><Grid item xs={12}><Button fullWidth variant="outlined" onClick={() => fileInputRef.current.click()}>Çevrilecek Dosyayı Yükle</Button><input ref={fileInputRef} type="file" hidden onChange={(e) => handleFileProcessing(e.target.files[0])} /></Grid><Grid item xs={12}><TextField fullWidth multiline rows={3} label="Orijinal Metin" value={translateData.originalText} onChange={e => setTranslateData({...translateData, originalText: e.target.value})} /></Grid><Grid item xs={12} sm={4}><FormControl fullWidth size="small"><InputLabel>Hedef Dil</InputLabel><Select value={translateData.targetLang} label="Hedef Dil" onChange={e => setTranslateData({...translateData, targetLang: e.target.value})}><MenuItem value="tr">Türkçe</MenuItem><MenuItem value="en">İngilizce</MenuItem></Select></FormControl></Grid><Grid item xs={12} sm={8}><Button fullWidth variant="contained" color="success" onClick={handleTranslate} disabled={isProcessing}>Çevir</Button></Grid><Grid item xs={12}><TextField fullWidth multiline rows={3} label="Çevrilmiş Metin" value={translateData.translatedText} InputProps={{ readOnly: true }} /></Grid><Grid item xs={12}><Button fullWidth variant="contained" onClick={() => processTextWithAI(translateData.translatedText)} disabled={isProcessing || !translateData.translatedText.trim()}>Çeviriden Ürün Çıkar</Button></Grid></Grid></Paper>}
                         </Box>
                         {isProcessing && <Box sx={{ width: '100%', mt: 2 }}><LinearProgress /></Box>}
-                        {extractedProducts.length > 0 && <Card sx={{mt: 2}}><CardHeader title="Bulunan Ürünler" action={<Button variant="contained" size="small" onClick={addExtractedToCart} startIcon={<ShoppingCartIcon />}>Seçilenleri Ekle</Button>}/><CardContent><TableContainer><Table size="small"><TableHead><TableRow><TableCell padding="checkbox"><Checkbox indeterminate={extractedProducts.some(p=>p.selected) && !extractedProducts.every(p=>p.selected)} checked={extractedProducts.length > 0 && extractedProducts.every(p=>p.selected)} onChange={handleSelectAllProducts} /></TableCell><TableCell>Ürün Detayları</TableCell><TableCell>Miktar</TableCell><TableCell align="right">İşlemler</TableCell></TableRow></TableHead><TableBody>{extractedProducts.map(p => (<TableRow key={p.id}><TableCell padding="checkbox"><Checkbox checked={p.selected} onChange={() => handleSelectProduct(p.id)} /></TableCell><TableCell><ListItemText primary={p.name} secondary={`Marka: ${p.brand || '-'} / Art. No: ${p.articleNumber || '-'}`} /></TableCell><TableCell>{p.quantity} {p.unit}</TableCell><TableCell align="right"><IconButton size="small" onClick={() => setEditProduct(p)}><EditIcon /></IconButton></TableCell></TableRow>))}</TableBody></Table></TableContainer></CardContent></Card>}
+                        {extractedProducts.length > 0 && (
+                          <Card sx={{ mt: 2 }}>
+                            <CardHeader
+                              title="AI ile Çıkarılan Ürünler"
+                              action={
+                                <Button
+                                  variant="contained"
+                                  size="small"
+                                  onClick={addExtractedToCart}
+                                  startIcon={<TaskIcon />}
+                                  disabled={extractedProducts.filter(p => p.selected).length === 0}
+                                >
+                                  Seçilenleri TALEBE EKLE
+                                </Button>
+                              }
+                            />
+                            <CardContent>
+                              <TableContainer>
+                                <Table size="small">
+                                  <TableHead>
+                                    <TableRow>
+                                      <TableCell padding="checkbox">
+                                        <Checkbox
+                                          indeterminate={extractedProducts.some(p => p.selected) && !extractedProducts.every(p => p.selected)}
+                                          checked={extractedProducts.length > 0 && extractedProducts.every(p => p.selected)}
+                                          onChange={handleSelectAllProducts}
+                                        />
+                                      </TableCell>
+                                      <TableCell>Ürün Detayları</TableCell>
+                                      <TableCell>Miktar</TableCell>
+                                      <TableCell align="right">Düzenle</TableCell>
+                                    </TableRow>
+                                  </TableHead>
+                                  <TableBody>
+                                    {extractedProducts.map(p => (
+                                      <TableRow key={p.id} hover selected={p.selected}>
+                                        <TableCell padding="checkbox">
+                                          <Checkbox checked={p.selected} onChange={() => handleSelectProduct(p.id)} />
+                                        </TableCell>
+                                        <TableCell>
+                                          <ListItemText
+                                            primary={p.name}
+                                            secondary={`Marka: ${p.brand || '-'} / Art. No: ${p.articleNumber || '-'}`}
+                                          />
+                                        </TableCell>
+                                        <TableCell>{p.quantity} {p.unit}</TableCell>
+                                        <TableCell align="right">
+                                          <IconButton size="small" onClick={() => setEditProduct(p)}>
+                                            <EditIcon />
+                                          </IconButton>
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </TableContainer>
+                              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                Çoklu ürünlerde, sadece istediğiniz ürünleri seçip ekleyebilirsiniz. Tümünü seçmek için üstteki kutucuğu kullanın. Her ürünü düzenleyebilirsiniz.
+                              </Typography>
+                            </CardContent>
+                          </Card>
+                        )}
                     </Box>
                 );
             case 1: // Talep Bilgileri
@@ -241,21 +377,54 @@ const UnifiedRequestSystem = () => {
                             <Typography variant="h6" gutterBottom>Talebi Açan Firma Bilgileri (Yurtdışı)</Typography>
                             <Autocomplete
                                 freeSolo
-                                options={companies.map((option) => option.name)}
-                                value={requestData.externalCompanyName}
+                                options={companies}
+                                getOptionLabel={option => option?.name || ''}
+                                isOptionEqualToValue={(option, value) => option?.id === value?.id}
+                                value={companies.find(c => c.name === requestData.externalCompanyName) || { name: requestData.externalCompanyName || '' }}
                                 onChange={(event, newValue) => {
-                                    handleDataChange('externalCompanyName', newValue);
+                                    handleDataChange('externalCompanyName', newValue?.name || '');
                                 }}
                                 onInputChange={(event, newInputValue) => {
                                     handleDataChange('externalCompanyName', newInputValue);
                                 }}
+                                renderOption={(props, option) => (
+                                    <li {...props} key={option.id || option.name}>{option.name}</li>
+                                )}
                                 renderInput={(params) => (
-                                    <TextField
-                                        {...params}
-                                        label="Firma Adı (Seçin veya Yeni Yazın)"
-                                        sx={{ mb: 2 }}
-                                        required
-                                    />
+                                    <Box>
+                                        <TextField
+                                            {...params}
+                                            label="Firma Adı (Seçin veya Yeni Yazın)"
+                                            sx={{ mb: 1 }}
+                                            required
+                                        />
+                                        {requestData.externalCompanyName &&
+                                            !companies.some(c => c.name.toLowerCase() === requestData.externalCompanyName?.toLowerCase()) && (
+                                                <Button
+                                                    variant="outlined"
+                                                    size="small"
+                                                    sx={{ mt: 1 }}
+                                                    onClick={async () => {
+                                                        try {
+                                                            // Sadece isimle yeni firma ekle
+                                                            const response = await fetch('/api/companies', {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ name: requestData.externalCompanyName, type: 'customer' })
+                                                            });
+                                                            if (!response.ok) throw new Error('Firma eklenemedi');
+                                                            const newCompany = await response.json();
+                                                            setCompanies(prev => [...prev, newCompany]);
+                                                            toast.success('Firma başarıyla eklendi. Detayları Firma Yönetimi’nden tamamlayabilirsiniz.');
+                                                        } catch (err) {
+                                                            toast.error('Firma eklenirken hata oluştu.');
+                                                        }
+                                                    }}
+                                                >
+                                                    + Yeni Firma Olarak Ekle
+                                                </Button>
+                                            )}
+                                    </Box>
                                 )}
                             />
                             <TextField fullWidth label="İlgili Kişi" value={requestData.externalRequesterName} onChange={e => handleDataChange('externalRequesterName', e.target.value)} sx={{mb: 3}} />
@@ -293,17 +462,30 @@ const UnifiedRequestSystem = () => {
     };
 
     return (
-        <Box sx={{ p: { xs: 1, sm: 2, md: 3 }, backgroundColor: theme.palette.background.default, minHeight: '100vh' }}>
+        <Box sx={{
+            p: { xs: 0, sm: 0, md: 0 },
+            backgroundColor: theme.palette.background.default,
+            minHeight: '100vh',
+            width: '100%',
+        }}>
             <Toaster richColors position="top-right" />
-            <Paper elevation={0} sx={{ p: 2, mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'transparent' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}><AIIcon color="primary" sx={{ fontSize: 32 }} /><Box><Typography variant="h5" fontWeight={600}>AI Talep Sistemi</Typography><Typography variant="subtitle2" color="text.secondary">Akıllı Satın Alma Sihirbazı</Typography></Box></Box>
-                <Chip icon={<AIIcon fontSize="small" />} label="Gemini AI Aktif" color="success" variant="outlined" sx={{ fontWeight: 500 }} />
-            </Paper>
-            <Grid container spacing={3}>
-                <Grid item xs={12} md={3}>
-                    <Card elevation={0} sx={{ borderRadius: 3, p: 1 }}>
-                        <CardHeader title="İlerleme Durumu" />
-                        <CardContent>
+            {/* BAŞLIK VE ALT BAŞLIK */}
+            <Box sx={{ width: '100%', px: { xs: 2, sm: 4, md: 8 }, pt: 4, pb: 2, mb: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <AIIcon color="primary" sx={{ fontSize: 40 }} />
+                    <Box>
+                        <Typography variant="h4" fontWeight={700}>AI Talep Sistemi</Typography>
+                        <Typography variant="subtitle1" color="text.secondary">Akıllı Satın Alma Sihirbazı</Typography>
+                    </Box>
+                </Box>
+                <Chip icon={<AIIcon fontSize="small" />} label="Gemini AI Aktif" color="success" variant="outlined" sx={{ fontWeight: 500, mt: 1 }} />
+            </Box>
+            {/* DRAWER + İÇERİK YATAY GRID */}
+            <Grid container spacing={4} justifyContent="center" alignItems="flex-start" sx={{ width: '100%', m: 0 }}>
+                <Grid item xs={12} md={4} lg={3} sx={{ display: 'flex', justifyContent: 'center' }}>
+                    <Card elevation={0} sx={{ borderRadius: 3, p: 2, minWidth: 260, maxWidth: 340, width: '100%', boxShadow: 'none', background: theme.palette.background.paper }}>
+                        <CardHeader title="İlerleme Durumu" sx={{ p: 0, mb: 2 }} />
+                        <CardContent sx={{ p: 0 }}>
                             {steps.map((label, index) => (
                                 <StepCard key={label} active={activeStep === index} onClick={() => handleStepClick(index)}>
                                     <Avatar sx={{ bgcolor: activeStep >= index ? 'primary.main' : 'grey.300', color: 'white' }}>{stepIcons[index]}</Avatar>
@@ -314,40 +496,21 @@ const UnifiedRequestSystem = () => {
                         </CardContent>
                     </Card>
                 </Grid>
-                <Grid item xs={12} md={6}>
-                    <Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}><Avatar sx={{ bgcolor: 'primary.lighter', color: 'primary.main' }}>{stepIcons[activeStep]}</Avatar><Box><Typography variant="h5">{steps[activeStep]}</Typography><Typography variant="body2" color="text.secondary">{stepSubtitles[activeStep]}</Typography></Box></Box>
+                <Grid item xs={12} md={8} lg={6}>
+                    <Box sx={{ maxWidth: 900, mx: 'auto', p: { xs: 2, sm: 3, md: 4 }, minHeight: '100vh' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                            <Avatar sx={{ bgcolor: 'primary.lighter', color: 'primary.main' }}>{stepIcons[activeStep]}</Avatar>
+                            <Box>
+                                <Typography variant="h5">{steps[activeStep]}</Typography>
+                                <Typography variant="body2" color="text.secondary">{stepSubtitles[activeStep]}</Typography>
+                            </Box>
+                        </Box>
                         {renderStepContent(activeStep)}
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3 }}>
                             <Button variant="outlined" disabled={activeStep === 0} onClick={handleBack} startIcon={<ArrowBackIcon />}>Önceki Adım</Button>
                             <Button variant="contained" disabled={!isStepValid(activeStep) || activeStep === steps.length - 1} onClick={handleNext} endIcon={<ArrowForwardIcon />}>Sonraki Adım</Button>
                         </Box>
                     </Box>
-                </Grid>
-                <Grid item xs={12} md={3}>
-                    <Card elevation={0} sx={{ borderRadius: 3 }}>
-                        <CardHeader title="Sepet Özeti" avatar={<ShoppingCartIcon />} />
-                        <CardContent>
-                            {selectedProducts.length > 0 ? (
-                                <List dense>
-                                    {selectedProducts.map(p => (
-                                        <ListItem key={p.id} secondaryAction={<IconButton edge="end" onClick={() => setSelectedProducts(prev => prev.filter(prod => prod.id !== p.id))}><DeleteIcon /></IconButton>}>
-                                            <ListItemText 
-                                                primary={p.name} 
-                                                secondary={`Marka: ${p.brand || '-'}, Art: ${p.articleNumber || '-'}, Miktar: ${p.quantity} ${p.unit}`} 
-                                            />
-                                        </ListItem>
-                                    ))}
-                                </List>
-                            ) : (
-                                <Box textAlign="center" p={3} sx={{ color: 'text.secondary' }}>
-                                    <WidgetsIcon sx={{ fontSize: 48, mb: 1 }} />
-                                    <Typography>Henüz ürün eklenmedi</Typography>
-                                    <Typography variant="caption">İlk adımdan ürün ekleyebilirsiniz</Typography>
-                                </Box>
-                            )}
-                        </CardContent>
-                    </Card>
                 </Grid>
             </Grid>
 

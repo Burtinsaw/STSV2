@@ -1,30 +1,41 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box, Grid, Typography, TextField, Button, Switch, FormControlLabel, Divider, Alert,
   Card, CardContent, CardHeader, Select, MenuItem, FormControl, InputLabel,
-  IconButton, Chip, List, ListItem, ListItemIcon, ListItemText, ListItemSecondaryAction
+  IconButton, Chip, Avatar, CircularProgress
 } from '@mui/material';
 import {
   Settings as SettingsIcon, Security as SecurityIcon, Notifications as NotificationsIcon,
   Language as LanguageIcon, Business as BusinessIcon, Storage as StorageIcon,
   Save as SaveIcon, Refresh as RefreshIcon, Download as DownloadIcon, Delete as DeleteIcon,
-  Visibility, VisibilityOff
+  Visibility, VisibilityOff, Edit as EditIcon, CameraAlt as CameraAltIcon
 } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
 import { useAuth } from 'contexts/AuthContext';
-import { useThemeMode } from 'contexts/ThemeContext';
 import axios from 'axios';
 
 const Settings = () => {
   const theme = useTheme();
   const { user } = useAuth();
-  const { mode, toggleTheme } = useThemeMode();
+  const mode = theme.palette.mode;
+  const toggleTheme = () => {};
+  const fileInputRef = useRef();
 
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState(user?.avatarUrl || '');
+  const [avatarFile, setAvatarFile] = useState(null);
+
+  const [profile, setProfile] = useState({
+    firstName: user?.firstName || '',
+    lastName: user?.lastName || '',
+    email: user?.email || '',
+    phone: user?.phone || '',
+    avatarUrl: user?.avatarUrl || ''
+  });
 
   const [passwordData, setPasswordData] = useState({
     currentPassword: '', newPassword: '', confirmPassword: ''
@@ -40,6 +51,7 @@ const Settings = () => {
     name: '', address: '', phone: '', email: '', taxNumber: '', website: ''
   });
 
+  // Profil ve şirket bilgilerini yükle
   const loadSettings = async () => {
     try {
       setLoading(true);
@@ -49,13 +61,66 @@ const Settings = () => {
         email: 'info@nazyapi.com', taxNumber: '1234567890', website: 'www.nazyapi.com'
       });
     } catch (error) {
-      console.error('Ayar yükleme hatası:', error);
       setError('Ayarlar yüklenirken hata oluştu');
     } finally {
       setLoading(false);
     }
   };
 
+  // Avatar seç
+  const handleAvatarChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        setError('Sadece resim dosyası yükleyebilirsiniz!');
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        setError('Avatar en fazla 2MB olmalı!');
+        return;
+      }
+      setAvatarFile(file);
+      const reader = new FileReader();
+      reader.onload = (ev) => setAvatarPreview(ev.target.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Avatarı kaydet
+  const saveAvatar = async () => {
+    if (!avatarFile) return;
+    try {
+      setLoading(true);
+      const formData = new FormData();
+      formData.append('avatar', avatarFile);
+      // API çağrısı (örnek endpoint)
+      await axios.post('/api/user/avatar', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setSuccess('Avatar güncellendi!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      setError('Avatar güncellenemedi: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Profil bilgisini güncelle
+  const saveProfile = async () => {
+    try {
+      setLoading(true);
+      await axios.post('/api/user/profile', profile);
+      setSuccess('Profil güncellendi!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      setError('Profil güncellenemedi: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Şifre değiştir
   const changePassword = async () => {
     if (!passwordData.currentPassword || !passwordData.newPassword || passwordData.newPassword !== passwordData.confirmPassword || passwordData.newPassword.length < 6) {
       setError('Lütfen şifre alanlarını doğru doldurun.');
@@ -76,6 +141,7 @@ const Settings = () => {
     }
   };
 
+  // Ayarları kaydet
   const saveSettings = async () => {
     try {
       setLoading(true);
@@ -99,7 +165,39 @@ const Settings = () => {
       {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
 
       <Grid container spacing={3}>
+        {/* Profil ve Avatar */}
         <Grid item xs={12} md={6}>
+          <Card sx={{ mb: 3 }}>
+            <CardHeader avatar={<Avatar src={avatarPreview} sx={{ width: 48, height: 48 }} />} title="Profil Bilgileri" />
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <Avatar src={avatarPreview} sx={{ width: 64, height: 64, mr: 2 }} />
+                <Button
+                  variant="outlined"
+                  startIcon={<CameraAltIcon />}
+                  component="label"
+                  disabled={loading}
+                >
+                  Avatar Yükle
+                  <input type="file" accept="image/*" hidden ref={fileInputRef} onChange={handleAvatarChange} />
+                </Button>
+                {avatarFile && (
+                  <Button variant="contained" sx={{ ml: 2 }} onClick={saveAvatar} disabled={loading}>
+                    Kaydet
+                  </Button>
+                )}
+              </Box>
+              <TextField fullWidth label="Ad" value={profile.firstName} onChange={e => setProfile({ ...profile, firstName: e.target.value })} sx={{ mb: 2 }} />
+              <TextField fullWidth label="Soyad" value={profile.lastName} onChange={e => setProfile({ ...profile, lastName: e.target.value })} sx={{ mb: 2 }} />
+              <TextField fullWidth label="E-posta" value={profile.email} onChange={e => setProfile({ ...profile, email: e.target.value })} sx={{ mb: 2 }} />
+              <TextField fullWidth label="Telefon" value={profile.phone} onChange={e => setProfile({ ...profile, phone: e.target.value })} sx={{ mb: 2 }} />
+              <Button variant="contained" startIcon={<EditIcon />} onClick={saveProfile} disabled={loading}>
+                Bilgileri Güncelle
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Şifre Değiştir */}
           <Card>
             <CardHeader avatar={<SecurityIcon />} title="Şifre Değiştir" />
             <CardContent>
@@ -133,8 +231,9 @@ const Settings = () => {
           </Card>
         </Grid>
 
+        {/* Sağ Kolon - Ayarlar ve Şirket Bilgileri */}
         <Grid item xs={12} md={6}>
-          <Card>
+          <Card sx={{ mb: 3 }}>
             <CardHeader avatar={<LanguageIcon />} title="Genel Ayarlar" />
             <CardContent>
               <FormControl fullWidth sx={{ mb: 2 }}>
@@ -170,10 +269,20 @@ const Settings = () => {
               />
             </CardContent>
           </Card>
-        </Grid>
 
+                  </Grid>
+
+        {/* Alt Kısım - Sistem İşlemleri */}
         <Grid item xs={12}>
           <Box sx={{ display: 'flex', gap: 2 }}>
             <Button variant="contained" startIcon={<SaveIcon />} onClick={saveSettings} disabled={loading}>
               Ayarları Kaydet
+            </Button>
+          </Box>
+        </Grid>
+      </Grid>
+    </Box>
+  );
+};
+
 export default Settings;

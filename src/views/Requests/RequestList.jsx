@@ -1,5 +1,6 @@
-import React from 'react';
-import { useSelector } from 'react-redux';
+import React, { useEffect } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
+import { fetchRequests } from '../../store/requestSlice';
 import {
   Card,
   CardHeader,
@@ -18,15 +19,25 @@ import {
 // ==============================|| TALEP LİSTESİ SAYFASI ||============================== //
 
 const RequestList = () => {
-  // Adım 2: useSelector ile Redux store'daki 'requests' dizisini çekiyoruz.
-  // state.request.requests yolu, reducer.js ve requestSlice.js'deki isimlendirmelerden gelir.
-  const { requests } = useSelector((state) => state.request);
+  const dispatch = useDispatch();
+  const { requests, loading, error } = useSelector((state) => state.request);
+
+  useEffect(() => {
+    dispatch(fetchRequests());
+  }, [dispatch]);
+
+  // DEBUG: requests dizisini ekrana yazdır
+  console.log('Tüm Talepler:', requests);
 
   return (
     <Card>
       <CardHeader title="Tüm Talepler" />
       <CardContent>
-        {requests.length === 0 ? (
+        {loading ? (
+          <Typography variant="body1" align="center">Yükleniyor...</Typography>
+        ) : error ? (
+          <Typography variant="body1" color="error" align="center">Hata: {error.message || error}</Typography>
+        ) : requests.length === 0 ? (
           <Typography variant="body1" align="center">
             Henüz oluşturulmuş bir talep bulunmuyor.
           </Typography>
@@ -43,18 +54,19 @@ const RequestList = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {/* Adım 3: Çektiğimiz 'requests' dizisini map ile dönerek tabloya yazdırıyoruz. */}
                 {requests.map((request) => (
-                  <TableRow key={request.requestID}>
+                  <TableRow key={request.requestID || request.id}>
                     <TableCell>
-                      <Typography variant="subtitle2">{request.requestID}</Typography>
+                      <Typography variant="subtitle2">{request.requestID || request.id}</Typography>
                     </TableCell>
-                    <TableCell>{request.title}</TableCell>
-                    <TableCell>{request.internalRequester.name}</TableCell>
+                    <TableCell>{request.title || request.talepBasligi}</TableCell>
+                    <TableCell>
+                      {request.internalRequester?.name || request.talepSahibiAd || request.firma || request.userId}
+                    </TableCell>
                     <TableCell>
                       <Chip 
-                        label={request.status} 
-                        color={request.status === 'Onay Bekliyor' ? 'warning' : 'primary'} 
+                        label={request.status || request.durum} 
+                        color={(request.status || request.durum) === 'Onay Bekliyor' ? 'warning' : 'primary'} 
                         size="small" 
                       />
                     </TableCell>

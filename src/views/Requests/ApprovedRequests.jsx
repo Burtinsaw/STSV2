@@ -15,7 +15,8 @@ import {
   Chip,
   Button,
   TablePagination,
-  Alert
+  Alert,
+  Typography
 } from '@mui/material';
 import { Visibility as ViewIcon, HourglassEmpty, CheckCircle, Cancel } from '@mui/icons-material';
 
@@ -30,22 +31,22 @@ const getStatusChip = (status) => {
   return <Chip label={label} color={color} icon={icon} size="small" />;
 };
 
+import { Link as RouterLink } from 'react-router-dom';
+import { useSelector, useDispatch } from 'react-redux';
+import { fetchRequests } from '../../store/requestSlice';
+
 const ApprovedRequests = () => {
-  const [requests, setRequests] = useState([]);
+  const dispatch = useDispatch();
+  const { requests, loading, error } = useSelector((state) => state.request);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const allRequests = JSON.parse(localStorage.getItem('purchaseRequests') || '[]');
-    
-    // DÜZELTME: Sadece geçerli bir 'id'ye sahip olan talepleri filtrele
-    const validRequests = allRequests.filter(req => req && req.id !== undefined && req.id !== null);
+    dispatch(fetchRequests());
+  }, [dispatch]);
 
-    const filtered = validRequests.filter(req => req.status === 'approved_for_sourcing');
-    const sorted = filtered.sort((a, b) => new Date(b.requestDate) - new Date(a.requestDate));
-    setRequests(sorted);
-  }, []);
+  const approved = requests.filter(req => (req.status || req.durum) === 'Onaylandı');
 
   const handleChangePage = (event, newPage) => { setPage(newPage); };
   const handleChangeRowsPerPage = (event) => {
@@ -54,60 +55,62 @@ const ApprovedRequests = () => {
   };
   const handleViewDetails = (requestId) => { navigate(`/requests/detail/${requestId}`); };
 
-  const paginatedRequests = requests.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const paginatedRequests = approved.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Card>
-        <CardHeader title="Onaylanmış ve Satınalmadaki Talepler" />
-        <CardContent>
-          {requests.length === 0 ? (
-            <Alert severity="info">Onaylanmış bir talep bulunmuyor.</Alert>
-          ) : (
-            <TableContainer component={Paper}>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Talep ID</TableCell>
-                    <TableCell>Başlık</TableCell>
-                    <TableCell>Talep Eden</TableCell>
-                    <TableCell>Tarih</TableCell>
-                    <TableCell>Durum</TableCell>
-                    <TableCell align="right">İşlemler</TableCell>
+    <Card>
+      <CardHeader title="Onaylanmış Talepler" />
+      <CardContent>
+        {loading ? (
+          <Typography>Yükleniyor...</Typography>
+        ) : error ? (
+          <Alert severity="error">{error.message || 'Talepler yüklenirken bir hata oluştu.'}</Alert>
+        ) : approved.length === 0 ? (
+          <Alert severity="info">Onaylanmış bir talep bulunmuyor.</Alert>
+        ) : (
+          <TableContainer component={Paper}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Talep ID</TableCell>
+                  <TableCell>Başlık</TableCell>
+                  <TableCell>Oluşturan</TableCell>
+                  <TableCell>Tarih</TableCell>
+                  <TableCell>Durum</TableCell>
+                  <TableCell align="right">İşlemler</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {paginatedRequests.map((req) => (
+                  <TableRow key={req.id} hover>
+                    <TableCell>{req.requestID || req.id}</TableCell>
+                    <TableCell>{req.title || req.talepBasligi}</TableCell>
+                    <TableCell>{req.internalRequester?.name || req.talepSahibiAd}</TableCell>
+                    <TableCell>{new Date(req.createdAt).toLocaleDateString('tr-TR')}</TableCell>
+                    <TableCell>{getStatusChip(req.status || req.durum)}</TableCell>
+                    <TableCell align="right">
+                      <Button variant="outlined" size="small" startIcon={<ViewIcon />} onClick={() => handleViewDetails(req.id)}>
+                        Detay
+                      </Button>
+                    </TableCell>
                   </TableRow>
-                </TableHead>
-                <TableBody>
-                  {paginatedRequests.map((req) => (
-                    <TableRow key={req.id} hover>
-                      <TableCell>{req.id ? `#${req.id.toString().slice(-6)}` : 'N/A'}</TableCell>
-                      <TableCell>{req.title}</TableCell>
-                      <TableCell>{req.requesterName || 'N/A'}</TableCell>
-                      <TableCell>{new Date(req.requestDate).toLocaleDateString('tr-TR')}</TableCell>
-                      <TableCell>{getStatusChip(req.status)}</TableCell>
-                      <TableCell align="right">
-                        <Button variant="outlined" size="small" startIcon={<ViewIcon />} onClick={() => handleViewDetails(req.id)}>
-                          Detay
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              <TablePagination
-                rowsPerPageOptions={[5, 10, 25]}
-                component="div"
-                count={requests.length}
-                rowsPerPage={rowsPerPage}
-                page={page}
-                onPageChange={handleChangePage}
-                onRowsPerPageChange={handleChangeRowsPerPage}
-                labelRowsPerPage="Sayfa başına satır:"
-              />
-            </TableContainer>
-          )}
-        </CardContent>
-      </Card>
-    </Box>
+                ))}
+              </TableBody>
+            </Table>
+            <TablePagination
+              rowsPerPageOptions={[5, 10, 25]}
+              component="div"
+              count={approved.length}
+              rowsPerPage={rowsPerPage}
+              page={page}
+              onPageChange={handleChangePage}
+              onRowsPerPageChange={handleChangeRowsPerPage}
+              labelRowsPerPage="Sayfa başına satır:"
+            />
+          </TableContainer>
+        )}
+      </CardContent>
+    </Card>
   );
 };
 

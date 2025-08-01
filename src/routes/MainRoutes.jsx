@@ -31,6 +31,11 @@ const OfferManagement = Loadable(lazy(() => import('views/procurement/OfferManag
 // Company Management
 const CompanyManagement = Loadable(lazy(() => import('views/admin/CompanyManagement')));
 
+// Settings & Profile
+const Settings = Loadable(lazy(() => import('views/Settings')));
+const Profile = Loadable(lazy(() => import('views/Profile')));
+const Messages = Loadable(lazy(() => import('views/Messages')));
+
 // PROTECTED LAYOUT
 const ProtectedLayout = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -65,6 +70,9 @@ const MainRoutes = {
     // Admin Routes
     { path: 'admin/user-management', element: <UserManagement /> },
     { path: 'admin/company-management', element: <CompanyManagement /> },
+    { path: 'settings', element: <Settings /> },
+    { path: 'profile', element: <Profile /> },
+    { path: 'messages', element: <Messages /> },
   ]
 };
 

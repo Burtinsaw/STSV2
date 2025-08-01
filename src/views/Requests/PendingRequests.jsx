@@ -27,7 +27,7 @@ const PendingRequests = () => {
   const { requests } = useSelector((state) => state.request);
 
   // Sadece "Onay Bekliyor" statüsündeki talepleri filtreliyoruz.
-  const pending = requests.filter(req => req.status === 'Onay Bekliyor');
+  const pending = requests.filter(req => (req.status || req.durum) === 'Onay Bekliyor');
 
   return (
     <Card>
@@ -53,7 +53,7 @@ const PendingRequests = () => {
               </TableHead>
               <TableBody>
                 {pending.map((request) => (
-                  <TableRow key={request.requestID} hover>
+                  <TableRow key={request.id} hover>
                     <TableCell>
                       <Typography variant="subtitle2">{request.requestID}</Typography>
                     </TableCell>
@@ -65,7 +65,7 @@ const PendingRequests = () => {
                         variant="outlined"
                         size="small"
                         component={RouterLink}
-                        to={`/requests/detail/${request.requestID}`} // Detay sayfasına yönlendirme
+                        to={`/requests/detail/${request.id}`}
                         startIcon={<EyeIcon />}
                       >
                         İncele
